@@ -1,0 +1,28 @@
+package com.wizard.btms.controller;
+
+import com.wizard.btms.dto.BankAccountResponse;
+import com.wizard.btms.dto.CreateBankAccountRequest;
+import com.wizard.btms.service.AccountService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/accounts")
+@RequiredArgsConstructor
+public class AccountController {
+
+    private final AccountService accountService;
+
+    @PostMapping
+    public BankAccountResponse createAccount(
+            @Valid @RequestBody CreateBankAccountRequest request,
+            Authentication authentication
+    ) {
+
+        String email = authentication.getName();
+
+        return accountService.createAccount(request, email);
+    }
+}
