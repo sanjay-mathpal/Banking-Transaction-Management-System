@@ -5,6 +5,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "bank_accounts")
@@ -37,6 +38,12 @@ public class BankAccount {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
+
+    @OneToMany(mappedBy = "fromAccount")
+    private List<Transaction> sentTransactions;
+
+    @OneToMany(mappedBy = "toAccount")
+    private List<Transaction> receivedTransactions;
 
     @PrePersist
     public void prePersist() {
