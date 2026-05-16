@@ -4,6 +4,8 @@ import com.wizard.btms.dto.BankAccountResponse;
 import com.wizard.btms.dto.CreateBankAccountRequest;
 import com.wizard.btms.entity.BankAccount;
 import com.wizard.btms.entity.User;
+import com.wizard.btms.exception.InsufficientBalanceException;
+import com.wizard.btms.exception.UnauthorizedAccountAccessException;
 import com.wizard.btms.repository.BankAccountRepository;
 import com.wizard.btms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,12 +45,16 @@ public class AccountService {
         BankAccount toAccount = bankAccountRepository.findByAccountNumber(request.getToAccountNumber()).orElseThrow(() -> new RuntimeException("Receiver account not found"));
 
         if (!fromAccount.getUser().getEmail().equals(email)) {
-            throw new RuntimeException("You can only transfer from your own account");
+            throw new UnauthorizedAccountAccessException(
+                    "You can only transfer from your own account"
+            );
         }
 
         if (fromAccount.getBalance().compareTo(request.getAmount()) < 0) {
 
-            throw new RuntimeException("Insufficient balance");
+            throw new InsufficientBalanceException(
+                    "Insufficient balance"
+            );
         }
 
         fromAccount.setBalance(fromAccount.getBalance().subtract(request.getAmount()));
