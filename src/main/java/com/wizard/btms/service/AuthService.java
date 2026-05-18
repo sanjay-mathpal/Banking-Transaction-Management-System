@@ -5,6 +5,8 @@ import com.wizard.btms.dto.LoginRequest;
 import com.wizard.btms.dto.RegisterRequest;
 import com.wizard.btms.entity.Role;
 import com.wizard.btms.entity.User;
+import com.wizard.btms.entity.UserStatus;
+import com.wizard.btms.exception.UserNotApprovedException;
 import com.wizard.btms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,6 +31,7 @@ public class AuthService {
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(Role.ROLE_USER)
+                .status(UserStatus.PENDING)
                 .build();
 
         userRepository.save(user);
@@ -43,6 +46,10 @@ public class AuthService {
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid email or password");
+        }
+
+        if(user.getStatus() != UserStatus.ACTIVE) {
+            throw new UserNotApprovedException("User is not Authorized");
         }
 
         String token = jwtService.generateToken(user.getEmail());

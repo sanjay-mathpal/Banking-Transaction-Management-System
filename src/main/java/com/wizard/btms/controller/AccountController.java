@@ -33,7 +33,7 @@ public class AccountController {
             @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @PostMapping
-    public BankAccountResponse createAccount(@Valid @RequestBody CreateBankAccountRequest request, Authentication authentication
+    public String createAccount(@Valid @RequestBody CreateBankAccountRequest request, Authentication authentication
     ) {
         String email = authentication.getName();
         return accountService.createAccount(request, email);

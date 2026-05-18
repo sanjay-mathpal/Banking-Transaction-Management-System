@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -63,14 +64,31 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(UserNotApprovedException.class)
+    public ResponseEntity<ErrorResponse> handleUserNotApprovedException(
+            UserNotApprovedException ex
+    ) {
+
+        ErrorResponse error = ErrorResponse.builder()
+                .error(ex.getMessage())
+                .status(HttpStatus.FORBIDDEN.value())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return new ResponseEntity<>(
+                error,
+                HttpStatus.FORBIDDEN
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(
             MethodArgumentNotValidException ex
     ) {
 
         String errorMessage =
-                ex.getBindingResult()
-                        .getFieldError()
+                Objects.requireNonNull(ex.getBindingResult()
+                                .getFieldError())
                         .getDefaultMessage();
 
         ErrorResponse response = ErrorResponse.builder()
