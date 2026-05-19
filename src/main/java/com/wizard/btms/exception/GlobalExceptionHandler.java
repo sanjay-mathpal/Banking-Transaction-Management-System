@@ -119,4 +119,13 @@ public class GlobalExceptionHandler {
                 HttpStatus.INTERNAL_SERVER_ERROR
         );
     }
+    @ExceptionHandler(FrozenAccountException.class)
+    public ResponseEntity<String> handleFrozenAccountException(
+            FrozenAccountException ex
+    ) {
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ex.getMessage());
+    }
 }

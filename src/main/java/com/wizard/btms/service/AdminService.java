@@ -1,9 +1,6 @@
 package com.wizard.btms.service;
 
-import com.wizard.btms.dto.AccountApprovalRequest;
-import com.wizard.btms.dto.BankAccountResponse;
-import com.wizard.btms.dto.UpdateUserStatusRequest;
-import com.wizard.btms.dto.UserResponse;
+import com.wizard.btms.dto.*;
 import com.wizard.btms.entity.*;
 import com.wizard.btms.repository.AccountRequestRepository;
 import com.wizard.btms.repository.BankAccountRepository;
@@ -112,5 +109,26 @@ public class AdminService {
                 .role(user.getRole().name())
                 .status(user.getStatus().name())
                 .build();
+    }
+
+    @Transactional
+    public void updateAccountStatus(
+            String accountNumber,
+            UpdateAccountStatusRequest request
+    ) {
+
+        BankAccount account =
+                bankAccountRepository
+                        .findByAccountNumber(accountNumber)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "Account not found"
+                                ));
+
+        account.setActive(
+                request.getActive()
+        );
+
+        bankAccountRepository.save(account);
     }
 }

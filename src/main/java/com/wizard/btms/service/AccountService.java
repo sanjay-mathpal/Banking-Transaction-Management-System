@@ -5,17 +5,21 @@ import com.wizard.btms.dto.CreateBankAccountRequest;
 import com.wizard.btms.dto.TransactionResponse;
 import com.wizard.btms.entity.*;
 import com.wizard.btms.exception.AccountNotFoundException;
+import com.wizard.btms.exception.FrozenAccountException;
 import com.wizard.btms.exception.InsufficientBalanceException;
 import com.wizard.btms.exception.UnauthorizedAccountAccessException;
 import com.wizard.btms.repository.AccountRequestRepository;
 import com.wizard.btms.repository.BankAccountRepository;
 import com.wizard.btms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import com.wizard.btms.dto.TransferRequest;
 import com.wizard.btms.repository.TransactionRepository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -28,6 +32,7 @@ public class AccountService {
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
     private final AccountRequestRepository accountRequestRepository;
+    private final TransactionAuditService transactionAuditService;
 
     public String createAccount(CreateBankAccountRequest request, String email) {
 
@@ -47,34 +52,141 @@ public class AccountService {
     }
 
     @Transactional
-    public void transferMoney(TransferRequest request, String email) {
-        BankAccount fromAccount = bankAccountRepository.findByAccountNumber(request.getFromAccountNumber()).orElseThrow(() -> new RuntimeException("Sender account not found"));
+    public void transferMoney(
+            TransferRequest request,
+            String email
+    ) {
 
-        BankAccount toAccount = bankAccountRepository.findByAccountNumber(request.getToAccountNumber()).orElseThrow(() -> new RuntimeException("Receiver account not found"));
+        BankAccount fromAccount =
+                bankAccountRepository
+                        .findByAccountNumberForUpdate(
+                                request.getFromAccountNumber()
+                        )
+                        .orElseThrow(() ->
+                                new AccountNotFoundException(
+                                        "Sender account not found"
+                                ));
+
+        BankAccount toAccount =
+                bankAccountRepository
+                        .findByAccountNumberForUpdate(
+                                request.getToAccountNumber()
+                        )
+                        .orElseThrow(() ->
+                                new AccountNotFoundException(
+                                        "Receiver account not found"
+                                ));
 
         if (!fromAccount.getUser().getEmail().equals(email)) {
+
             throw new UnauthorizedAccountAccessException(
                     "You can only transfer from your own account"
             );
         }
 
-        if (fromAccount.getBalance().compareTo(request.getAmount()) < 0) {
+        Transaction transaction = Transaction.builder()
+                .amount(request.getAmount())
+                .transactionType(TransactionType.TRANSFER)
+                .status(TransactionStatus.PENDING)
+                .description(request.getDescription())
+                .fromAccount(fromAccount)
+                .toAccount(toAccount)
+                .build();
 
-            throw new InsufficientBalanceException(
-                    "Insufficient balance"
+        transactionAuditService.saveTransaction(transaction);
+
+        try {
+
+            if (!fromAccount.getActive()) {
+
+                transaction.setStatus(
+                        TransactionStatus.FAILED
+                );
+
+                transaction.setFailureReason(
+                        "SENDER_ACCOUNT_FROZEN"
+                );
+
+                transactionAuditService.saveTransaction(transaction);
+
+                throw new FrozenAccountException(
+                        "Sender account is frozen"
+                );
+            }
+
+            if (!toAccount.getActive()) {
+
+                transaction.setStatus(
+                        TransactionStatus.FAILED
+                );
+
+                transaction.setFailureReason(
+                        "RECEIVER_ACCOUNT_FROZEN"
+                );
+
+                transactionAuditService.saveTransaction(transaction);
+
+                throw new FrozenAccountException(
+                        "Receiver account is frozen"
+                );
+            }
+
+            if (fromAccount.getBalance()
+                    .compareTo(request.getAmount()) < 0) {
+
+                transaction.setStatus(
+                        TransactionStatus.FAILED
+                );
+
+                transaction.setFailureReason(
+                        "INSUFFICIENT_BALANCE"
+                );
+
+                transactionAuditService.saveTransaction(transaction);
+
+                throw new InsufficientBalanceException(
+                        "Insufficient balance"
+                );
+            }
+
+            fromAccount.setBalance(
+                    fromAccount.getBalance()
+                            .subtract(request.getAmount())
             );
+
+            toAccount.setBalance(
+                    toAccount.getBalance()
+                            .add(request.getAmount())
+            );
+
+            bankAccountRepository.save(fromAccount);
+
+            bankAccountRepository.save(toAccount);
+
+            transaction.setStatus(
+                    TransactionStatus.SUCCESS
+            );
+
+            transactionAuditService.saveTransaction(transaction);
+
+        } catch (Exception ex) {
+
+            if (transaction.getStatus()
+                    != TransactionStatus.FAILED) {
+
+                transaction.setStatus(
+                        TransactionStatus.FAILED
+                );
+
+                transaction.setFailureReason(
+                        "TRANSFER_FAILED"
+                );
+
+                transactionAuditService.saveTransaction(transaction);
+            }
+
+            throw ex;
         }
-
-        fromAccount.setBalance(fromAccount.getBalance().subtract(request.getAmount()));
-
-        toAccount.setBalance(toAccount.getBalance().add(request.getAmount()));
-
-        Transaction transaction = Transaction.builder().amount(request.getAmount()).transactionType(TransactionType.TRANSFER).description(request.getDescription()).fromAccount(fromAccount).toAccount(toAccount).build();
-
-        transactionRepository.save(transaction);
-
-        bankAccountRepository.save(fromAccount);
-        bankAccountRepository.save(toAccount);
     }
 
     public List<BankAccountResponse> getMyAccounts(String email)
@@ -91,8 +203,13 @@ public class AccountService {
                 .toList();
     }
 
-    public List<TransactionResponse> getTransactionHistory(String accountNumber, String email)
-    {
+    public Page<TransactionResponse> getTransactionHistory(
+            String accountNumber,
+            String email,
+            int page,
+            int size
+    ) {
+
         BankAccount account =
                 bankAccountRepository.findByAccountNumber(accountNumber)
                         .orElseThrow(() ->
@@ -107,39 +224,41 @@ public class AccountService {
             );
         }
 
-        List<Transaction> transactions =
+        Pageable pageable =
+                PageRequest.of(page, size);
+
+        Page<Transaction> transactions =
                 transactionRepository
                         .findTransactionsByAccountNumber(
-                                accountNumber
+                                accountNumber,
+                                pageable
                         );
 
-        return transactions.stream()
-                .map(transaction ->
-                        TransactionResponse.builder()
-                                .amount(transaction.getAmount())
-                                .transactionType(
-                                        transaction.getTransactionType()
-                                )
-                                .fromAccount(
-                                        transaction.getFromAccount() != null
-                                                ? transaction.getFromAccount()
-                                                  .getAccountNumber()
-                                                : null
-                                )
-                                .toAccount(
-                                        transaction.getToAccount() != null
-                                                ? transaction.getToAccount()
-                                                  .getAccountNumber()
-                                                : null
-                                )
-                                .description(
-                                        transaction.getDescription()
-                                )
-                                .createdAt(
-                                        transaction.getCreatedAt()
-                                )
-                                .build()
-                )
-                .toList();
+        return transactions.map(transaction ->
+                TransactionResponse.builder()
+                        .amount(transaction.getAmount())
+                        .transactionType(
+                                transaction.getTransactionType()
+                        )
+                        .fromAccount(
+                                transaction.getFromAccount() != null
+                                        ? transaction.getFromAccount()
+                                          .getAccountNumber()
+                                        : null
+                        )
+                        .toAccount(
+                                transaction.getToAccount() != null
+                                        ? transaction.getToAccount()
+                                          .getAccountNumber()
+                                        : null
+                        )
+                        .description(
+                                transaction.getDescription()
+                        )
+                        .createdAt(
+                                transaction.getCreatedAt()
+                        )
+                        .build()
+        );
     }
 }

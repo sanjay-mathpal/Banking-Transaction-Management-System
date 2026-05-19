@@ -6,6 +6,7 @@ import com.wizard.btms.dto.TransactionResponse;
 import com.wizard.btms.dto.TransferRequest;
 import com.wizard.btms.service.AccountService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,6 +14,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.data.domain.Page;
+import io.swagger.v3.oas.annotations.Parameter;
 
 import java.util.List;
 
@@ -77,23 +80,46 @@ public class AccountController {
     }
 
     @Operation(
-            summary = "Get transaction history",
-            description = "Returns transaction history for a specific bank account"
+            summary = "Get paginated transaction history",
+            description = "Fetch paginated transactions for a bank account"
     )
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Transactions fetched successfully"),
-            @ApiResponse(responseCode = "401", description = "Unauthorized"),
-            @ApiResponse(responseCode = "403", description = "Access denied"),
-            @ApiResponse(responseCode = "404", description = "Account not found")
+
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Transactions fetched successfully"
+            ),
+
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Account not found",
+                    content = @Content
+            ),
+
+            @ApiResponse(
+                    responseCode = "403",
+                    description = "Unauthorized access",
+                    content = @Content
+            )
     })
     @GetMapping("/{accountNumber}/transactions")
-    public List<TransactionResponse> getTransactions(@PathVariable String accountNumber, Authentication authentication)
-    {
-        String email = authentication.getName();
+    public Page<TransactionResponse> getTransactionHistory(
+            @PathVariable String accountNumber,
+
+            @RequestParam(defaultValue = "0")
+            int page,
+
+            @RequestParam(defaultValue = "10")
+            int size,
+
+            Authentication authentication
+    ) {
 
         return accountService.getTransactionHistory(
                 accountNumber,
-                email
+                authentication.getName(),
+                page,
+                size
         );
     }
 }
