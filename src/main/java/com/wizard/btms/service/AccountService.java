@@ -4,10 +4,7 @@ import com.wizard.btms.dto.BankAccountResponse;
 import com.wizard.btms.dto.CreateBankAccountRequest;
 import com.wizard.btms.dto.TransactionResponse;
 import com.wizard.btms.entity.*;
-import com.wizard.btms.exception.AccountNotFoundException;
-import com.wizard.btms.exception.FrozenAccountException;
-import com.wizard.btms.exception.InsufficientBalanceException;
-import com.wizard.btms.exception.UnauthorizedAccountAccessException;
+import com.wizard.btms.exception.*;
 import com.wizard.btms.repository.AccountRequestRepository;
 import com.wizard.btms.repository.BankAccountRepository;
 import com.wizard.btms.repository.UserRepository;
@@ -20,6 +17,10 @@ import com.wizard.btms.repository.TransactionRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.math.BigDecimal;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,6 +34,9 @@ public class AccountService {
     private final TransactionRepository transactionRepository;
     private final AccountRequestRepository accountRequestRepository;
     private final TransactionAuditService transactionAuditService;
+
+    private static final BigDecimal DAILY_TRANSFER_LIMIT =
+            BigDecimal.valueOf(50000);
 
     public String createAccount(CreateBankAccountRequest request, String email) {
 
@@ -131,6 +135,47 @@ public class AccountService {
                 );
             }
 
+            LocalDateTime startOfDay =
+                    LocalDate.now().atStartOfDay();
+
+            LocalDateTime endOfDay =
+                    LocalDate.now().atTime(
+                            LocalTime.MAX
+                    );
+
+            BigDecimal todayTransferredAmount =
+                    transactionRepository
+                            .getTodayTransferAmount(
+                                    fromAccount.getAccountNumber(),
+                                    startOfDay,
+                                    endOfDay
+                            );
+
+            BigDecimal totalAmountAfterTransfer =
+                    todayTransferredAmount.add(
+                            request.getAmount()
+                    );
+
+            if (totalAmountAfterTransfer.compareTo(
+                    DAILY_TRANSFER_LIMIT) > 0) {
+
+                transaction.setStatus(
+                        TransactionStatus.FAILED
+                );
+
+                transaction.setFailureReason(
+                        "DAILY_TRANSFER_LIMIT_EXCEEDED"
+                );
+
+                transactionAuditService.saveTransaction(
+                        transaction
+                );
+
+                throw new DailyTransferLimitExceededException(
+                        "Daily transfer limit exceeded"
+                );
+            }
+
             if (fromAccount.getBalance()
                     .compareTo(request.getAmount()) < 0) {
 
@@ -167,6 +212,8 @@ public class AccountService {
                     TransactionStatus.SUCCESS
             );
 
+            transaction.setFailureReason(null);
+
             transactionAuditService.saveTransaction(transaction);
 
         } catch (Exception ex) {
@@ -182,7 +229,9 @@ public class AccountService {
                         "TRANSFER_FAILED"
                 );
 
-                transactionAuditService.saveTransaction(transaction);
+                transactionAuditService.saveTransaction(
+                        transaction
+                );
             }
 
             throw ex;

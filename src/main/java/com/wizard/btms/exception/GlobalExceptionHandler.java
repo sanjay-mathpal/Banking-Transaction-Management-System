@@ -128,4 +128,17 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ex.getMessage());
     }
+
+    @ExceptionHandler(
+            DailyTransferLimitExceededException.class
+    )
+    public ResponseEntity<String>
+    handleDailyTransferLimitExceededException(
+            DailyTransferLimitExceededException ex
+    ) {
+
+        return ResponseEntity
+                .badRequest()
+                .body(ex.getMessage());
+    }
 }
